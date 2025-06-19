@@ -26,10 +26,7 @@ const registrar = async (req, res) => {
       `;
 
       db.query(queryUsuario, [Nombre, Apellido, Correo, hashedPassword, Id_Rol], (err, result) => {
-        if (err) {
-          console.log('Error al registrar usuario:', err);
-          return res.status(500).json({ mensaje: 'Error al registrar usuario' });
-        }
+        if (err) return res.status(500).json({ mensaje: 'Error al registrar usuario' });
 
         const Id_Usuario = result.insertId;
 
@@ -39,10 +36,7 @@ const registrar = async (req, res) => {
         `;
 
         db.query(queryPerfil, [Nombre, Direccion, Telefono, Id_Usuario], (err) => {
-          if (err) {
-            console.log('Error al crear el perfil:', err);
-            return res.status(500).json({ mensaje: 'Error al crear el perfil del usuario' });
-          }
+          if (err) return res.status(500).json({ mensaje: 'Error al crear el perfil del usuario' });
 
           res.status(201).json({ mensaje: 'Usuario registrado correctamente con perfil' });
         });
@@ -91,7 +85,61 @@ const login = (req, res) => {
   });
 };
 
+// ✅ Recuperar contraseña: genera el link con token
+const recuperarPassword = (req, res) => {
+  const { Correo } = req.body;
+
+  if (!Correo) {
+    return res.status(400).json({ mensaje: 'Correo es requerido' });
+  }
+
+  Usuario.buscarPorCorreo(Correo, (err, resultados) => {
+    if (err) return res.status(500).json({ mensaje: 'Error al buscar usuario' });
+    if (resultados.length === 0) {
+      return res.status(404).json({ mensaje: 'Correo no registrado' });
+    }
+
+    const usuario = resultados[0];
+
+    const token = jwt.sign(
+      { id: usuario.Id_Usuario },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    console.log(`🔗 Link para restablecer contraseña: http://localhost:3000/api/auth/reset-password/${token}`);
+
+    res.json({
+      mensaje: 'Link generado. Revisa la consola del servidor.'
+    });
+  });
+};
+
+// ✅ Restablecer contraseña usando el token
+const resetPassword = async (req, res) => {
+  const { token } = req.params;
+  const { NuevaContraseña } = req.body;
+
+  if (!token || !NuevaContraseña) {
+    return res.status(400).json({ mensaje: 'Token y nueva contraseña son requeridos' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const hashedPassword = await bcrypt.hash(NuevaContraseña, 10);
+
+    Usuario.actualizarPassword(decoded.id, hashedPassword, (err) => {
+      if (err) return res.status(500).json({ mensaje: 'Error al cambiar la contraseña' });
+      res.json({ mensaje: 'Contraseña restablecida con éxito' });
+    });
+  } catch (error) {
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
 module.exports = {
   registrar,
-  login
+  login,
+  recuperarPassword,
+  resetPassword
 };
